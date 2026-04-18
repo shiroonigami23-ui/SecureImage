@@ -1,173 +1,154 @@
-import streamlit as st
-import torch
-import matplotlib.pyplot as plt
-import numpy as np
-from PIL import Image
-from torchvision import transforms
-from core_logic import SecureParseNet_Inference, NeuroSpikeProcessor, QuantumLayer
+from __future__ import annotations
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Neuro-Secure Research Suite",
-    layout="wide",
-    page_icon="🧠",
-    initial_sidebar_state="expanded"
+from io import BytesIO
+
+import streamlit as st
+from PIL import Image, UnidentifiedImageError
+
+from core_logic import (
+    AuthenticationError,
+    CapacityError,
+    InvalidPayloadError,
+    capacity_for_text,
+    decode_message_from_image,
+    decrypt_image_file_bytes,
+    encode_message_into_image,
+    encrypt_image_file_bytes,
+    image_to_png_bytes,
 )
 
-# --- CUSTOM CSS (Good UI/UX) ---
-st.markdown("""
-<style>
-    .main { background-color: #f4f6f9; }
-    h1 { color: #1a237e; font-family: 'Roboto', sans-serif; }
-    .stButton>button { width: 100%; border-radius: 8px; background-color: #3f51b5; color: white; }
-    .metric-container { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #3f51b5; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); }
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="SecureImage", page_icon="??", layout="wide")
 
-# --- SIDEBAR ---
-st.sidebar.title("🔬 Research Controls")
-module = st.sidebar.radio("Select Research Module", 
-    ["1. SecureParseNet (Security)", "2. Neuro-Spike SegNet (Energy)", "3. Quantum Attention (Novelty)"])
+st.title("SecureImage")
+st.caption("Hide secret messages inside images and encrypt image files locally.")
+st.markdown("Live app: [https://secureimage.streamlit.app/](https://secureimage.streamlit.app/)")
 
-st.sidebar.markdown("---")
-st.sidebar.caption(f"System: {'GPU Active 🚀' if torch.cuda.is_available() else 'CPU Optimization 💻'}")
+st.info("All processing runs locally in this Streamlit session. Use PNG for steganography output to avoid lossy compression.")
 
-# --- MODULE 1: SECURE PARSENET ---
-if module == "1. SecureParseNet (Security)":
-    st.title("🛡️ SecureParseNet: Integrity Verification")
-    st.markdown("### Goal: Detect Adversarial Attacks using Differentiable Hashing")
-    
-    @st.cache_resource
-    def load_secure_model():
-        return SecureParseNet_Inference()
-    
-    model = load_secure_model()
-    
-    uploaded_file = st.file_uploader("Upload Image for Semantic Analysis", type=['jpg', 'png', 'jpeg'])
-    
-    if uploaded_file:
-        image = Image.open(uploaded_file).convert("RGB")
-        col1, col2 = st.columns(2)
-        
-        # Preprocessing
-        tfms = transforms.Compose([
-            transforms.Resize((256, 256)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-        input_tensor = tfms(image).unsqueeze(0)
-        
-        with col1:
-            st.image(image, caption="Original Input", use_container_width=True)
-            with st.spinner("Running MobileNetV3 Backbone..."):
-                with torch.no_grad():
-                    out, hash_clean = model(input_tensor)
-            
-            mask = out.argmax(1).squeeze().numpy()
-            st.image(mask, caption="Semantic Segmentation Mask", use_container_width=True, clamp=True)
-            st.info(f"Clean Hash Signature: {hash_clean[0, :6].numpy().round(3)}...")
 
-        with col2:
-            st.subheader("Adversarial Simulation")
-            epsilon = st.slider("Attack Strength (Epsilon)", 0.0, 0.15, 0.05)
-            
-            if st.button("RUN ATTACK"):
-                # FGSM Logic
-                input_tensor.requires_grad = True
-                out_adv, _ = model(input_tensor)
-                loss = out_adv.mean()
-                loss.backward()
-                
-                noise = input_tensor.grad.sign() * epsilon
-                adv_tensor = (input_tensor + noise).detach()
-                
-                with torch.no_grad():
-                    _, hash_adv = model(adv_tensor)
-                
-                # Verify
-                mse = torch.nn.functional.mse_loss(hash_clean, hash_adv).item()
-                adv_img_show = transforms.ToPILImage()(adv_tensor.squeeze(0))
-                st.image(adv_img_show, caption=f"Adversarial Input (Epsilon={epsilon})", use_container_width=True)
-                
-                st.metric("Integrity Loss (MSE)", f"{mse:.5f}")
-                
-                if mse > 0.02:
-                    st.error("🚨 TAMPERING DETECTED: Semantic Integrity Violated!")
-                else:
-                    st.success("✅ SECURE: Hash Invariant.")
+def _open_image_from_upload(uploaded_file) -> Image.Image:
+    try:
+        return Image.open(uploaded_file)
+    except UnidentifiedImageError as exc:
+        raise ValueError("Unsupported image format.") from exc
 
-# --- MODULE 2: NEURO-SPIKE SEGNET ---
-elif module == "2. Neuro-Spike SegNet (Energy)":
-    st.title("🧠 Neuro-Spike SegNet")
-    st.markdown("### Goal: Reduce Computation via Sleep-Wake Gating")
-    
-    processor = NeuroSpikeProcessor()
-    
-    uploaded_file = st.file_uploader("Upload Image for Neuromorphic Encoding", type=['jpg', 'png'])
-    
-    if uploaded_file:
-        image = Image.open(uploaded_file).convert("L").resize((128, 128))
-        img_tensor = transforms.ToTensor()(image)
-        
-        st.image(image, caption="Input for Spike Generation", width=200)
-        
-        if st.button("RUN NEUROMORPHIC SIMULATION"):
-            wake_data, sleep_data = processor.process_real_image(img_tensor)
-            
-            # Visualization
-            fig, ax = plt.subplots(figsize=(10, 5))
-            time_steps = np.arange(len(wake_data) + len(sleep_data))
-            data = wake_data + sleep_data
-            
-            ax.plot(time_steps[:30], data[:30], color='green', label='Wake Phase (Active)')
-            ax.plot(time_steps[30:], data[30:], color='red', label='Sleep Phase (Gating)')
-            ax.axvline(x=30, color='black', linestyle='--')
-            ax.text(32, max(data)*0.9, "Gating ON", fontsize=12)
-            ax.set_ylabel("Total Network Spikes")
-            ax.set_xlabel("Time (ms)")
-            ax.set_title("Energy Reduction Proof: Sleep-Wake Cycle")
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-            
-            st.pyplot(fig)
-            
-            # Export Logic
-            fn = "spike_analysis.png"
-            plt.savefig(fn)
-            with open(fn, "rb") as f:
-                st.download_button("Download Spike Graph", f, file_name=fn)
-            
-            # Calculation
-            avg_wake = np.mean(wake_data)
-            avg_sleep = np.mean(sleep_data)
-            savings = ((avg_wake - avg_sleep) / avg_wake) * 100
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Wake Spikes (Avg)", int(avg_wake))
-            c2.metric("Sleep Spikes (Avg)", int(avg_sleep))
-            c3.metric("Energy Saved", f"{savings:.1f}%")
 
-# --- MODULE 3: QUANTUM ATTENTION ---
-elif module == "3. Quantum Attention (Novelty)":
-    st.title("⚛️ Quantum Superposition Attention")
-    st.markdown("### Goal: Visualize Wave Function Collapse")
-    
-    model = QuantumLayer(dim=128)
-    
-    if st.button("GENERATE QUANTUM STATE"):
-        # Simulate feature vector
-        feats = torch.randn(1, 128)
-        probs = model(feats).detach().numpy()[0]
-        
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.bar(range(128), probs, color='purple', alpha=0.7)
-        ax.set_title(" collapsed Wave Function (|Psi|^2)")
-        ax.set_xlabel("Feature Dimension")
-        ax.set_ylabel("Probability Amplitude")
-        
-        st.pyplot(fig)
-        
-        fn = "quantum_state.png"
-        plt.savefig(fn)
-        with open(fn, "rb") as f:
-            st.download_button("Download Quantum Plot", f, file_name=fn)
+tab1, tab2 = st.tabs(["Steganography", "File Encryption"])
+
+with tab1:
+    st.subheader("Hide or reveal messages")
+    mode = st.radio("Select action", ["Encode message", "Decode message"], horizontal=True)
+
+    if mode == "Encode message":
+        uploaded = st.file_uploader("Upload cover image", type=["png", "jpg", "jpeg", "bmp", "webp"], key="encode_upload")
+        message = st.text_area("Secret message", placeholder="Type your hidden message...")
+        password = st.text_input("Password (optional, recommended)", type="password")
+
+        if uploaded:
+            cover = _open_image_from_upload(uploaded)
+            cap = capacity_for_text(cover)
+            st.write(f"Estimated max payload capacity: **{cap} bytes**")
+            st.image(cover, caption="Cover image", use_container_width=True)
+
+        if st.button("Encode and download", type="primary"):
+            if not uploaded:
+                st.error("Please upload an image first.")
+            elif not message.strip():
+                st.error("Please enter a message.")
+            else:
+                try:
+                    cover = _open_image_from_upload(uploaded)
+                    encoded = encode_message_into_image(cover, message.strip(), password=password.strip() or None)
+                    png_data = image_to_png_bytes(encoded)
+                    st.success("Message encoded successfully.")
+                    st.download_button(
+                        "Download encoded image (PNG)",
+                        data=png_data,
+                        file_name="secureimage_encoded.png",
+                        mime="image/png",
+                    )
+                except CapacityError as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    st.error(f"Encoding failed: {exc}")
+
+    else:
+        uploaded = st.file_uploader("Upload encoded image", type=["png", "jpg", "jpeg", "bmp", "webp"], key="decode_upload")
+        password = st.text_input("Password (if used during encode)", type="password", key="decode_password")
+
+        if st.button("Decode message", type="primary"):
+            if not uploaded:
+                st.error("Please upload an image first.")
+            else:
+                try:
+                    encoded_image = _open_image_from_upload(uploaded)
+                    decoded = decode_message_from_image(encoded_image, password=password.strip() or None)
+                    st.success("Message extracted successfully.")
+                    st.text_area("Recovered message", value=decoded, height=180)
+                except AuthenticationError as exc:
+                    st.error(str(exc))
+                except InvalidPayloadError as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    st.error(f"Decoding failed: {exc}")
+
+with tab2:
+    st.subheader("Encrypt or decrypt full image files")
+    mode = st.radio("Select action", ["Encrypt image file", "Decrypt .simg file"], horizontal=True, key="file_mode")
+
+    if mode == "Encrypt image file":
+        uploaded = st.file_uploader("Upload image to encrypt", type=["png", "jpg", "jpeg", "bmp", "gif", "webp"], key="file_encrypt")
+        password = st.text_input("Encryption password", type="password", key="file_encrypt_password")
+
+        if st.button("Encrypt file", type="primary", key="encrypt_btn"):
+            if not uploaded:
+                st.error("Please upload an image first.")
+            elif not password.strip():
+                st.error("Password is required.")
+            else:
+                try:
+                    encrypted_blob = encrypt_image_file_bytes(uploaded.getvalue(), password.strip())
+                    original_name = uploaded.name.rsplit(".", 1)[0]
+                    st.success("Image file encrypted successfully.")
+                    st.download_button(
+                        "Download encrypted file",
+                        data=encrypted_blob,
+                        file_name=f"{original_name}.simg",
+                        mime="application/octet-stream",
+                    )
+                except Exception as exc:
+                    st.error(f"Encryption failed: {exc}")
+
+    else:
+        uploaded = st.file_uploader("Upload .simg encrypted file", type=["simg", "json", "txt"], key="file_decrypt")
+        password = st.text_input("Decryption password", type="password", key="file_decrypt_password")
+        output_ext = st.text_input("Recovered file extension", value="png", help="Example: png, jpg, jpeg")
+
+        if st.button("Decrypt file", type="primary", key="decrypt_btn"):
+            if not uploaded:
+                st.error("Please upload an encrypted file first.")
+            elif not password.strip():
+                st.error("Password is required.")
+            else:
+                try:
+                    decrypted_bytes = decrypt_image_file_bytes(uploaded.getvalue(), password.strip())
+                    ext = output_ext.strip().lower().replace(".", "") or "png"
+                    st.success("File decrypted successfully.")
+                    st.download_button(
+                        "Download recovered image",
+                        data=decrypted_bytes,
+                        file_name=f"secureimage_recovered.{ext}",
+                        mime=f"image/{ext}",
+                    )
+
+                    try:
+                        preview = Image.open(BytesIO(decrypted_bytes))
+                        st.image(preview, caption="Recovered image preview", use_container_width=True)
+                    except Exception:
+                        st.warning("Recovered bytes were decrypted, but preview could not be rendered as an image.")
+                except AuthenticationError as exc:
+                    st.error(str(exc))
+                except InvalidPayloadError as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    st.error(f"Decryption failed: {exc}")

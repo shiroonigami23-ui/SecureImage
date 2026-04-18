@@ -1,70 +1,105 @@
-# 🔒 SecureImage
+# SecureImage
 
-![Status](https://img.shields.io/badge/Status-Live-success)
-![Security](https://img.shields.io/badge/Security-Client_Side-green)
-![Privacy](https://img.shields.io/badge/Privacy-No_Server_Uploads-blue)
+SecureImage is a privacy-first Streamlit app for:
 
-> **A secure web-based tool for Image Steganography and Encryption.**
+- Steganography: hide secret text inside an image using LSB embedding.
+- Authenticated encryption: protect hidden messages with AES-256-GCM.
+- Full file encryption: encrypt/decrypt entire image files with password-based keys.
 
-**SecureImage** is a privacy-focused application that allows users to hide sensitive messages inside images (Steganography) or encrypt image files directly in the browser. Whether you want to send secret messages or protect your photos from prying eyes, SecureImage performs all operations locally on your device, ensuring your data never leaves your browser.
+Live app: https://secureimage.streamlit.app/
 
----
+Repository: https://github.com/shiroonigami23-ui/SecureImage
 
-## 🔗 Live Demo
+## Why this upgrade
 
-**Protect your images now:**
-### [🛡️ Launch SecureImage](https://shiroonigami23-ui.github.io/SecureImage/)
+The project now uses a production-ready algorithm instead of a research mock flow. The new pipeline includes:
 
----
+- Capacity-aware LSB embedding in RGB channels.
+- Structured payload framing with `SIMG` signature and length header.
+- PBKDF2-HMAC-SHA256 key derivation (250,000 iterations).
+- AES-256-GCM encryption for confidentiality + integrity.
+- SHA-256 checksum validation after extraction.
+- Zlib compression before embedding to improve effective capacity.
 
-## ✨ Key Features
+## Features
 
-### 🕵️‍♂️ Image Steganography (Hide Text)
-- **Hide Data:** Embed secret text messages or passwords invisibly inside standard image files (PNG/JPG).
-- **Extract Data:** Decrypt and reveal hidden messages from processed images using a passkey.
-- **LSB Algorithm:** Uses Least Significant Bit manipulation for minimal visual distortion.
+- Encode secret text into PNG/JPG/JPEG/BMP/WebP cover images.
+- Optional password protection for hidden messages.
+- Decode hidden messages and verify payload integrity.
+- Encrypt raw image files to `.simg` format.
+- Decrypt `.simg` files back to original image bytes.
+- Fully local processing in the running app session.
 
-### 🔐 Image Encryption
-- **Scramble & Lock:** Encrypt the entire visual content of an image using a password.
-- **Secure Decryption:** Restore the original image only with the correct credentials.
-- **Client-Side Processing:** All encryption happens in your browser via WebCrypto API or JavaScript—no images are ever uploaded to a server.
+## Tech stack
 
-### 📂 File Management
-- **Drag & Drop:** Easy upload interface.
-- **Instant Download:** Save your secured images immediately after processing.
-- **Format Support:** Works with standard web image formats (PNG, JPEG).
+- Python 3.10+
+- Streamlit
+- Pillow
+- NumPy
+- Cryptography (AES-GCM)
 
----
+## Installation
 
-## 🎮 How to Use
+```bash
+git clone https://github.com/shiroonigami23-ui/SecureImage.git
+cd SecureImage
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+# source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-### To Hide a Message (Steganography)
-1. **Upload:** Drag and drop an image into the "Encode" section.
-2. **Type:** Enter the secret message you want to hide.
-3. **Password (Optional):** Set a password for extra security.
-4. **Encode:** Click the button to generate the new image.
-5. **Download:** Save the resulting image. It will look identical to the original!
+## Run locally
 
-### To Reveal a Message
-1. **Upload:** Select the image containing the secret message in the "Decode" section.
-2. **Unlock:** Enter the password (if one was set).
-3. **Reveal:** Click "Decode" to see the hidden text.
+```bash
+streamlit run app.py
+```
 
----
+Then open the local URL shown by Streamlit.
 
-## 📸 Screenshots
+## Usage
 
-| Encoding (Hiding) | Decoding (Revealing) |
-|:---:|:---:|
-| *Interface for hiding text* | *Interface for extracting text* |
+### 1) Steganography (hide message)
 
----
+1. Open the `Steganography` tab.
+2. Choose `Encode message`.
+3. Upload a cover image.
+4. Enter the secret message.
+5. (Optional) add a password for AES-GCM protection.
+6. Download the generated PNG.
 
-## 💻 Local Installation
+### 2) Steganography (reveal message)
 
-To run this tool locally on your machine:
+1. Open `Steganography` -> `Decode message`.
+2. Upload the encoded image.
+3. Enter password if one was used.
+4. Decode and read recovered text.
 
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/shiroonigami23-ui/SecureImage.git](https://github.com/shiroonigami23-ui/SecureImage.git)
-   
+### 3) Full image encryption
+
+1. Open `File Encryption`.
+2. Choose `Encrypt image file`.
+3. Upload an image + set password.
+4. Download encrypted `.simg` file.
+5. Use `Decrypt .simg file` with the same password to recover bytes.
+
+## Security notes
+
+- For steganography output, prefer PNG (lossless). Lossy recompression (like social media JPEG re-encode) can destroy hidden data.
+- Use strong passwords for encrypted payloads.
+- Hidden payload existence is not deniable against advanced steganalysis; encryption protects message content.
+- No system is perfect. Treat this as strong practical security, not military-grade deniability.
+
+## Suggested repository metadata
+
+Description:
+`SecureImage: Streamlit app for AES-GCM protected image steganography and image file encryption.`
+
+Topics:
+`steganography, image-encryption, aes-gcm, cybersecurity, streamlit, python, privacy, lsb, cryptography`
+
+## License
+
+Add your preferred license file (MIT is a common default for open-source projects).
