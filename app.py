@@ -217,13 +217,12 @@ st.markdown(
   <p class="small-note" style="margin:0.25rem 0 0.5rem 0;">Next-gen local privacy toolkit for steganography and image encryption.</p>
   <span class="metric-pill">AES-256-GCM</span>
   <span class="metric-pill">LSB Steganography</span>
-  <span class="metric-pill">PBKDF2 250K</span>
+  <span class="metric-pill">PBKDF2 600K</span>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
-st.markdown("Live app: [https://secureimage.streamlit.app/](https://secureimage.streamlit.app/)")
 st.info("Everything runs locally in your session. For hidden-message images, always download as PNG.")
 
 with st.sidebar:
@@ -441,4 +440,5 @@ with tab3:
         st.success("Activity history cleared.")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 

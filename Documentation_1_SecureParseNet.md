@@ -1,43 +1,124 @@
-# Technical Report: SecureParseNet
-**Type:** Algorithmic Enhancement / Security
-**Base Architecture:** MobileNetV3 (Pre-trained on ImageNet)
+﻿# SecureImage v2 Algorithm Documentation
 
-## 1. Problem Statement
-Lightweight segmentation models used in Edge IoT (drones, CCTV) are highly susceptible to adversarial perturbations (FGSM/PGD). Standard cryptographic hashing (SHA-256) cannot verify image integrity because it is sensitive to pixel noise, not semantic content.
+## Overview
 
-## 2. The Solution: Differentiable Perceptual Hashing (DiffPHash)
-We upgraded the standard MobileNet architecture by appending a novel "Integrity Verification Head". 
-- **Mechanism:** The system extracts the segmentation probability map and projects it into the frequency domain using a Discrete Cosine Transform (DCT).
-- **Novelty:** Unlike standard pHash, we utilize a `Tanh` relaxation to make the thresholding operation differentiable. This allows the hash consistency to be part of the loss function during training.
+SecureImage v2 improves both confidentiality and tamper resistance for steganography and full-file encryption.
 
-## 3. Experimental Validation
-Using the accompanying software suite, we demonstrated that FGSM attacks which successfully degrade segmentation quality also trigger a massive divergence in the generated Hash Signature (MSE > 0.05), allowing the system to flag and reject the input automatically.
+Main upgrades:
+- Versioned binary payload format (`SIM2`) for steganography.
+- Authenticated encryption with AES-256-GCM using header-bound AAD.
+- Stronger key derivation: PBKDF2-HMAC-SHA256 with 600,000 iterations.
+- Password-seeded randomized embedding positions (for encrypted stego payloads).
+- Binary encrypted file format (`SIF1`) with integrity-bound metadata.
+- Backward compatibility for legacy JSON `.simg` blobs.
 
+## Threat Model
 
-# Technical Report: Neuro-Spike SegNet
-**Type:** Novel Algorithm / Neuromorphic Computing
-**Patent Potential:** High (Biomimetic Gating Logic)
+SecureImage v2 is designed to protect:
+- Message confidentiality against unauthorized readers.
+- Payload integrity against accidental corruption or active tampering.
+- Predictable LSB location leakage (for password-protected mode) via deterministic permutation.
 
-## 1. Novelty Statement
-This algorithm introduces the **"Sleep-Wake Membrane Gating"** mechanism. While "sleep" concepts exist in AI for memory consolidation (preventing forgetting), this is the first application of biological sleep cycles to **spatial redundancy pruning** during inference.
+Not guaranteed:
+- Resistance to advanced steganalysis by well-funded adversaries.
+- Survival under lossy recompression (JPEG/social media pipelines).
 
-## 2. Algorithm Mechanics
-Standard Spiking Neural Networks (SNNs) suffer from high firing rates even when looking at static images. 
-- **Wake Phase (t < 25ms):** Neurons operate with standard Leaky Integrate-and-Fire (LIF) dynamics to encode features.
-- **Sleep Phase (t > 25ms):** A global gating signal increases the membrane leak constant ($\tau$) and firing threshold ($V_{th}$).
-- **Result:** Weak signals (noise/redundancy) die out. Only strong, salient features persist.
+## Steganography v2 (`SIM2`)
 
-## 3. Performance Proof
-Real-image simulation confirms a **~40-60% reduction in spike count** during the sleep phase with minimal information loss. This translates directly to battery savings on neuromorphic chips (e.g., Loihi, Tianjic).
+### Header format (fixed length)
 
-### **How to Run**
+`>4sBBHI16s12s`
 
-1.  Open Terminal.
-2.  Install libraries: `pip install -r requirements.txt`.
-3.  Run the app: `streamlit run app.py`.
-4.  **Show Sir:**
-    * Go to **Module 1**: Upload a photo of a car/street. Show how the segmentation works. Then attack it. Show the "Integrity Violated" alert.
-    * Go to **Module 2**: Upload the same photo. Click "Simulate". Show the graph dropping in the "Red Zone" (Sleep Phase). Say: *"Sir, this drop proves we are saving battery by ignoring redundant pixels."*
+Fields:
+- `magic` (4): `SIM2`
+- `version` (1): `2`
+- `flags` (1): bit field
+  - `0x01`: encrypted
+  - `0x02`: permuted embedding positions
+- `reserved` (2): future use
+- `payload_len` (4): payload byte length
+- `salt` (16): PBKDF2 salt (zeroed in plaintext mode)
+- `nonce` (12): AES-GCM nonce (zeroed in plaintext mode)
 
-This is professional, robust, and scientifically valid.
+### Inner message structure
 
+Before encryption, text is converted to:
+1. UTF-8 bytes
+2. SHA-256 digest of plaintext
+3. Packed as: `msg_len(4) || message || digest(32)`
+4. Compressed with `zlib(level=9)`
+
+### Encrypted mode workflow
+
+1. Generate `salt` and `nonce`.
+2. Derive keys from password using PBKDF2-HMAC-SHA256 (600k iterations, 64-byte output).
+3. Domain-separate into:
+- `enc_key`: AES-256-GCM key
+- `perm_key`: seed material for randomized embedding
+4. Build header with known ciphertext length (`compressed_len + 16` GCM tag).
+5. Encrypt compressed inner blob with AES-GCM using header bytes as AAD.
+6. Embed header sequentially in first header bits.
+7. Embed encrypted payload at pseudorandom bit positions derived from `perm_key + header`.
+
+### Plain mode workflow
+
+When no password is provided:
+- Payload remains compressed but not encrypted.
+- Header and payload are embedded sequentially.
+- Inner SHA-256 still verifies accidental corruption.
+
+## Randomized Embedding
+
+For encrypted stego payloads, SecureImage v2 shuffles payload bit positions over the available post-header region.
+
+Benefits:
+- Removes fixed contiguous payload pattern.
+- Makes simple extraction by naive LSB scanners harder.
+- Keeps deterministic decode with correct password.
+
+## File Encryption v1 (`SIF1`)
+
+### Binary format
+
+Header struct: `>4sB16s12sI`
+- `magic`: `SIF1`
+- `version`: `1`
+- `salt`: 16 bytes
+- `nonce`: 12 bytes
+- `payload_len`: ciphertext length
+
+Data: `header || ciphertext`
+
+### Process
+
+1. Derive file key from password + salt (PBKDF2 600k, domain-separated).
+2. Encrypt raw image bytes with AES-256-GCM.
+3. Bind header as AAD to prevent metadata tampering.
+4. Store compact binary output.
+
+## Validation and Failure Modes
+
+Decode/decrypt fails safely if:
+- magic/version mismatch
+- header/payload length mismatch
+- wrong password
+- modified ciphertext/tag
+- invalid compressed inner payload
+- checksum mismatch in inner message structure
+
+## Backward Compatibility
+
+`decrypt_image_file_bytes` still supports old JSON envelope blobs used in earlier versions.
+
+## Performance Notes
+
+- PBKDF2 600k increases brute-force cost but adds latency on low-power devices.
+- Compression level 9 improves capacity for text-heavy messages.
+- Randomized embedding has low overhead compared to cryptographic steps.
+
+## Operational Guidance
+
+- Prefer PNG for steganography output.
+- Do not re-encode stego images through lossy pipelines.
+- Use long unique passwords (at least 14+ chars recommended).
+- Share password over a different channel than encrypted media.
